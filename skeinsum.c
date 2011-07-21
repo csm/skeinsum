@@ -3,6 +3,7 @@
    
 
 #include <getopt.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <skeinApi.h>
 
@@ -21,10 +22,9 @@ static const char *progname = "skeinsum";
 int main(int argc, char * const * argv)
 {
     int c;
-    const char *optstring = "abcltw";
+    const char *optstring = "bcl:s:tw";
     const struct option longopts[] = {
-        { "algorithm", required_argument, NULL, 'a' },
-        { "alg", required_argument, NULL, 'a' },
+        { "statesize", required_argument, NULL, 's' },
         { "length", required_argument, NULL, 'l' },
         { "len", required_argument, NULL, 'l' },
         { "binary", no_argument, NULL, 'b' },
@@ -36,28 +36,28 @@ int main(int argc, char * const * argv)
         { "help", no_argument, NULL, OPT_HELP },
         { "version", no_argument, NULL, OPT_VERSION },
         { NULL, 0, NULL, 0 }
-    }
+    };
     const char *mode = "r";
     int check = 0;
     int quiet = 0;
     int status = 0;
     int warn_lines = 0;
     SkeinSize_t size = Skein512;
-    size_t bitLen = 512;
+    size_t bitlen = 512;
     int bitlenset = 0;
 
     while ((c = getopt_long(argc, argv, optstring, longopts, NULL)) != -1)
     {
         switch (c)
         {
-        case 'a':
+        case 's':
             {
                 int x = atoi(optarg);
                 if (x != Skein256 && x != Skein512 && x != Skein1024)
                 {
-                    fprintf(stderr, "%s: invalid algorithm: %s (must be %d, %d, or %d)\n",
+                    fprintf(stderr, "%s: invalid state size: %s (must be %d, %d, or %d)\n",
                         progname, optarg, Skein256, Skein512, Skein1024);
-                    fprintf(stderr, "Try `%s --help' for more info", progname);
+                    fprintf(stderr, "Try `%s --help' for more info.\n", progname);
                     exit(EXIT_FAILURE);
                 }
                 size = (SkeinSize_t) x;
@@ -66,8 +66,15 @@ int main(int argc, char * const * argv)
             
         case 'l':
             {
-                
+                bitlen = atoi(optarg);
+                if (bitlen < 0 || bitlen > 1024)
+                {
+                    fprintf(stderr, "%s: invalid bit length size: %s\n", progname, bitlen);
+                    fprintf(stderr, "Try `%s --help' for more info.\n", progname);
+                    exit(EXIT_FAILURE);
+                }
             }
+            break;
             
         case 'b':
             mode = "rb";
@@ -102,9 +109,16 @@ int main(int argc, char * const * argv)
             exit(EXIT_SUCCESS);
             
         case '?':
-            fprintf(stderr, "Try `%s --help' for more info", progname);
+            fprintf(stderr, "Try `%s --help' for more info.\n", progname);
             exit(EXIT_FAILURE);
         }
+    }
+    
+    if (bitlen > size)
+    {
+        fprintf(stderr, "%s: invalid bit length size: %s\n", progname, bitlen);
+        fprintf(stderr, "Try `%s --help' for more info.\n", progname);
+        exit(EXIT_FAILURE);        
     }
     
     exit(0);
@@ -112,10 +126,29 @@ int main(int argc, char * const * argv)
 
 void show_help(void)
 {
-    printf()
+    printf("Usage: %s [OPTIONS]... [FILE]...\n", progname);
+    printf("Print or check Skein checksums.\n");
+    printf("With no FILE, or when FILE is -, read standard input.\n\n");
+    
+    printf("  -s, --statesize=SIZE      Use internal state size SIZE, one of\n");
+    printf("                            256, 512, or 1024 (default 512)\n");
+    printf("  -l, --length=LEN          Use output length LEN (default, equals\n");
+    printf("                            state size).\n");
+    printf("  -b, --binary              Read files in binary mode.\n");
+    printf("  -c, --check               Read Skein sums from the FILEs and check them.\n");
+    printf("  -t, --text                Read files in text mode (default).\n\n");
+    
+    printf("The following options are used when checking sums:\n");
+    printf("      --quiet               Don't print OK for each successfully verified file.\n");
+    printf("      --status              Don't output anything, status code shows success.\n");
+    printf("  -w, --warn                Warn about improperly formatted checksum lines.\n\n");
+    
+    printf("Other options:\n");
+    printf("      --help                Show this help and exit.\n");
+    printf("      --version             Show version number and exit.\n");
 }
 
 void show_version(void)
 {
-    printf("%s version %s", progname, SKEINSUM_VERSION);
+    printf("%s version %s\n", progname, SKEINSUM_VERSION);
 }
