@@ -1,0 +1,3 @@
+[submodule "Skein3Fish"]
+	path = Skein3Fish
+	url = https://github.com/wernerd/Skein3Fish.git
