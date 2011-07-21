@@ -2,20 +2,27 @@
    Copyright (C) 2011 Casey Marshall. */
    
 
+#include <errno.h>
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <skeinApi.h>
 
 #define SKEINSUM_VERSION "0.0.1"
+
+#define BUFFER_SIZE 4 * 1024
 
 #define OPT_HELP    256
 #define OPT_VERSION 257
 #define OPT_QUIET   258
 #define OPT_STATUS  259
 
+#define BITS_TO_BYTES(nbits) (((nbits) + 7) / 8)
+
 void show_help(void);
-void show_version(void);       
+void show_version(void);
+char *to_hex(uint8_t *digest, size_t digestlen);
 
 static const char *progname = "skeinsum";
 
@@ -44,7 +51,7 @@ int main(int argc, char * const * argv)
     int warn_lines = 0;
     SkeinSize_t size = Skein512;
     size_t bitlen = 512;
-    int bitlenset = 0;
+    SkeinCtx_t skein;
 
     while ((c = getopt_long(argc, argv, optstring, longopts, NULL)) != -1)
     {
@@ -69,7 +76,7 @@ int main(int argc, char * const * argv)
                 bitlen = atoi(optarg);
                 if (bitlen < 0 || bitlen > 1024)
                 {
-                    fprintf(stderr, "%s: invalid bit length size: %s\n", progname, bitlen);
+                    fprintf(stderr, "%s: invalid bit length size: %d\n", progname, bitlen);
                     fprintf(stderr, "Try `%s --help' for more info.\n", progname);
                     exit(EXIT_FAILURE);
                 }
@@ -116,9 +123,93 @@ int main(int argc, char * const * argv)
     
     if (bitlen > size)
     {
-        fprintf(stderr, "%s: invalid bit length size: %s\n", progname, bitlen);
+        fprintf(stderr, "%s: invalid bit length size: %d\n", progname, bitlen);
         fprintf(stderr, "Try `%s --help' for more info.\n", progname);
         exit(EXIT_FAILURE);        
+    }
+    
+    if (skeinCtxPrepare(&skein, size) != SKEIN_SUCCESS)
+    {
+        fprintf(stderr, "%s: error initializing Skein context.\n", progname);
+        exit(EXIT_FAILURE);
+    }
+    if (skeinInit(&skein, bitlen) != SKEIN_SUCCESS)
+    {
+        fprintf(stderr, "%s: failed to initialize skein context for parameters %d, %d\n", progname, size, bitlen);
+        exit(EXIT_FAILURE);
+    }
+    
+    if (check)
+    {
+        fprintf(stderr, "not done yet, sorry!\n");
+        exit(EXIT_FAILURE);
+    }
+    else
+    {
+        const char *stdin_str[] = { "-" };
+        int errcode;
+        uint8_t digest[BITS_TO_BYTES(1024)];
+        char buffer[BUFFER_SIZE];
+        int i = optind;
+        const char **files = argv;
+        int count = argc;
+        size_t readsize;
+        if (optind >= argc)
+        {
+            i = 0;
+            count = 1;
+            files = stdin_str;
+        }
+        for (; i < count; i++)
+        {
+            FILE *input;
+            if (strcmp(files[i], "-") == 0)
+            {
+                input = stdin;
+                setvbuf(input, NULL, 0, _IONBF);
+            }
+            else
+            {
+                input = fopen(files[i], mode);
+                if (input == NULL)
+                {
+                    fprintf(stderr, "%s: %s: %s\n", progname, files[i], strerror(errno));
+                    continue;
+                }
+            }
+            
+            while ((readsize = fread(buffer, 1, BUFFER_SIZE, input)) == BUFFER_SIZE)
+            {
+                skeinUpdate(&skein, buffer, readsize);
+            }
+            if (readsize > 0)
+            {
+                skeinUpdate(&skein, buffer, readsize);
+            }
+            if (ferror(input))
+            {
+                fprintf(stderr, "%s: %s: %s\n", progname, files[i], strerror(ferror(input)));
+                if (input != stdin)
+                {
+                    fclose(input);
+                }
+                continue;
+            }
+            if ((errcode = skeinFinal(&skein, digest)) != SKEIN_SUCCESS)
+            {
+                fprintf(stderr, "%s: %s: skeinFinal error %d\n", progname, files[i], errcode);
+            }
+            else
+            {
+                printf("%s  %s\n", to_hex(digest, bitlen), files[i]);
+            }
+            
+            if (input != stdin)
+            {
+                fclose(input);
+            }
+            skeinReset(&skein);
+        }
     }
     
     exit(0);
@@ -151,4 +242,19 @@ void show_help(void)
 void show_version(void)
 {
     printf("%s version %s\n", progname, SKEINSUM_VERSION);
+}
+
+static char hex_buffer[BITS_TO_BYTES(1024) * 2 + 1];
+
+char *to_hex(uint8_t *digest, size_t digestlen)
+{
+    int i;
+    char *b = hex_buffer;
+    b[0] = '\0';
+    for (i = 0; i < BITS_TO_BYTES(digestlen) && i < BITS_TO_BYTES(1024); i++)
+    {
+        sprintf(b, "%02x", digest[i]);
+        b += 2;
+    }
+    return hex_buffer;
 }
